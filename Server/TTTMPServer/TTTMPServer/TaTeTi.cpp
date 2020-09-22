@@ -63,11 +63,6 @@ bool TaTeTi::CheckInput(Match& match, int input)
 		return false;
 }
 
-/*bool TaTeTi::CheckAll(int matchID)
-{
-	return false;
-}*/
-
 char TaTeTi::CellToChar(Cell input)
 {
 	char output;
@@ -101,30 +96,6 @@ bool TaTeTi::MakeMove(Match& match, User player, int cell)
 	}
 }
 
-/*int TaTeTi::GetNextPlayerIndex(vector<Match>& matches, int matchID)
-{
-	for (int i = 0; i < matches.size(); i++)
-	{
-		if (match.ID == matchID)
-		{
-			return match.nextPlayerIndex;
-		}
-	}
-	return -1;
-}*/
-
-/*void TaTeTi::SetNextPlayerIndex(Match& match, int index)
-{
-	for (int i = 0; i < matches.size(); i++)
-	{
-		if (match.ID == matchID)
-		{
-			match.nextPlayerIndex = index;
-			i = matches.size();
-		}
-	}
-}*/
-
 void TaTeTi::SetNextPlayer(Match& match, bool state)
 {
 	match.nextPlayer = state;
@@ -138,92 +109,6 @@ void TaTeTi::SetIsInUse(Match& match, bool isInUse)
 void TaTeTi::SetTurns(Match& match, int turns)
 {
 	match.turnsLeft = turns;
-}
-
-/*bool TaTeTi::MakeMove(User* player, int cell)
-{
-	if (CheckInput(cell, currentGamestate))
-	{
-		currentGamestate.cellArray[cell - 1] = player->cellType;
-		turnsLeft--;
-		return true;
-	}
-	else
-		return false;
-}*/
-
-/*void TaTeTi::AddPlayer(User* &newPlayer)
-{
-	if (firstPlayer)
-	{
-		secondPlayer = newPlayer;
-		secondPlayer->currentRoom = this;
-		SetupPlayers(firstPlayer, secondPlayer);
-	}
-
-	firstPlayer = newPlayer;
-	firstPlayer->currentRoom = this;
-}*/
-
-/*bool TaTeTi::CanRecievePlayer()
-{
-	if (firstPlayer && secondPlayer)
-		return false;
-
-	return true;
-}*/
-
-/*void TaTeTi::SetupPlayers(User*& first, User*& second)
-{
-	first->cellType = dot;
-	second->cellType = cross;
-}*/
-
-void TaTeTi::StartGameLocal()
-{
-	/*
-	for (int i = 0; i < PLAYER_SIZE; i++)
-	{
-		players[i].cellType;
-	}
-
-	players[0].cellType = cross;
-	players[1].cellType = dot;
-	int playerInput;
-
-	while (!gameEnded)
-	{
-		for (int i = 0; i < PLAYER_SIZE; i++)
-		{
-			cout << "player " << i+1 << " input number :" << endl;
-			bool validInput = false;
-			while (!validInput)
-			{
-				cin >> playerInput;
-				validInput = CheckInput(playerInput, currentGamestate);
-			}
-			currentGamestate.cellArray[playerInput - 1] = players[i].cellType;
-
-			for (int i = 2; i >= 0; i--)
-			{
-				for (int i2 = 0; i2 < 3; i2++)
-				{
-					cout << CellToChar(currentGamestate.cellArray[i * 3 + i2]) << "  ";
-				}
-				cout << endl;
-			}
-
-			if (CheckAll(currentGamestate) || turnsLeft == 0)
-			{
-				gameEnded = true;
-				i = PLAYER_SIZE;
-			}
-				
-			turnsLeft -= 1;
-		}
-		
-	}
-	*/
 }
 
 void TaTeTi::StartGame(Match& match)
@@ -240,18 +125,6 @@ void TaTeTi::NextPlayer(Match& match)
 {
 	match.nextPlayer = !match.nextPlayer;
 }
-
-/*Match TaTeTi::GetMatch(vector<Match>& matches, int matchID)
-{
-	for (int i = 0; i < matches.size(); i++)
-	{
-		if (match.ID == matchID)
-		{
-			return match;
-		}
-	}
-
-}*/
 
 void TaTeTi::RestartCells(Match& match)
 {

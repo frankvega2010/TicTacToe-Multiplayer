@@ -1,6 +1,4 @@
-//#include <iostream>
 #include "TaTeTi.h"
-#include "main.h"
 
 int matchesId = 0;
 
@@ -46,7 +44,6 @@ bool TryStartGame(vector<Match>& matches, TaTeTi& ttt, vector<User>& currentUser
 		ttt.SetIsInUse(matches[currentID], true);
 		ttt.RestartCells(matches[currentID]);
 		ttt.SetTurns(matches[currentID], 8);
-		//ttt.SetNextPlayerIndex(1, currentID);
 		matches[currentID].player1HasEntered = false;
 		matches[currentID].player2HasEntered = false;
 	}
@@ -124,6 +121,33 @@ int irand(float a, float b)
 	return irand() * (b - a) + a;
 }
 
+User* GetPlayerData(vector<User>& users, vector<Match>& matches, TaTeTi& ttt, int matchID)
+{
+	User* users2 = new User[PLAYER_SIZE];
+
+	int playersFound = 0;
+
+	for (int i2 = 0; i2 < users.size(); i2++)
+	{
+		if (playersFound < 2)
+		{
+			if (users[i2].matchID == matchID && !users[i2].connectionLost && users[i2].isPlaying && (users[i2].isPlayer1 || users[i2].isPlayer2))
+			{
+				//GET DATA
+				users2[playersFound] = users[i2];
+
+				playersFound++;
+			}
+		}
+		else
+		{
+			i2 = users.size();
+		}
+	}
+
+	return users2;
+}
+
 void ShowBoard(vector<User>& users, vector<Match>& matches, TaTeTi& ttt, int matchID, message& msg)
 {
 	int playersFound = 0;
@@ -141,7 +165,6 @@ void ShowBoard(vector<User>& users, vector<Match>& matches, TaTeTi& ttt, int mat
 				sendto(users[i2].listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&users[i2].client, sizeof(users[i2].client));
 
 				playersFound++;
-				//i2 = users.size();
 			}
 		}
 		else
@@ -170,7 +193,7 @@ void NextTurn(vector<User>& users, vector<Match>& matches, TaTeTi& ttt, int matc
 				string cellType(1, ttt.CellToChar(users[i2].cellType));
 				player1CellType = cellType;
 
-				string command = "1Es su turno.Usted es " + player1CellType;
+				string command = "1Es su turno.Usted es " + player1CellType + ". Para elegir un espacio escriba '2NumeroDeEspacio', ej: 21,22,23,etc.";
 				msg = *((message*)command.c_str());
 				sendto(users[i2].listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&users[i2].client, sizeof(users[i2].client));
 
@@ -208,7 +231,7 @@ void NextTurn(vector<User>& users, vector<Match>& matches, TaTeTi& ttt, int matc
 				string cellType(1, ttt.CellToChar(users[i2].cellType));
 				player2CellType = cellType;
 
-				string command = "1Es su turno.Usted es " + player2CellType;
+				string command = "1Es su turno.Usted es " + player2CellType + ". Para elegir un espacio escriba '2NumeroDeEspacio', ej: 21,22,23,etc.";
 				msg = *((message*)command.c_str());
 				sendto(users[i2].listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&users[i2].client, sizeof(users[i2].client));
 
@@ -263,12 +286,22 @@ void main()
 
 	}
 
+	string ipToUse = "";
+	int portToUse = 0;
+
+	cout << "Escribe la ip para el servidor: ";
+	cin >> ipToUse;
+	cout << endl;
+	cout << "Escribe el puerto para el servidor: ";
+	cin >> portToUse;
+	cout << endl;
+
 	// bind el socket ( seleccionar/pegar el socket a una dupla ip:puerto / direccion de socket)
 	sockaddr_in hint;
 	hint.sin_family = AF_INET;
-	hint.sin_port = htons(9000);
+	hint.sin_port = htons(portToUse);
 	//hint.sin_addr.S_un.S_addr = ADDR_ANY; // es lo mismo que abajo
-	inet_pton(AF_INET, "127.0.0.1", &hint.sin_addr); // direccion ip destino	
+	inet_pton(AF_INET, ipToUse.c_str(), &hint.sin_addr); // direccion ip destino	
 
 	int bindResult = bind(listening, (sockaddr*)&hint, sizeof(hint));
 
@@ -293,7 +326,6 @@ void main()
 	memset(buf, 0, sizeof(buf)); // es lo mismo que arriba pero ZeroMemory es solo de windows 
 	memset(&msgRcd, 0, sizeof(msgRcd));
 	memset(&msg, 0, sizeof(msg));
-	//string msgtest = "Mensaje recibido.";
 
 	while (buf != "\n")
 	{
@@ -339,8 +371,9 @@ void main()
 				User u;
 				u.client = client;
 				u.listening = listening;
+				u.connectionLost = false;
 				users.push_back(u);
-				cout << "Se conecto alguien" << endl;
+				cout << ip << ":" << port << " se ha conectado al servidor" << endl;
 				msg = *((message*)"1Registro exitoso, escriba 1NombreDeJugador para elegir un alias.");
 				sendto(listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&client, sizeof(client));
 			}
@@ -349,6 +382,7 @@ void main()
 		case '1':
 		{
 			bool found = false;
+			int index = -1;
 			for (int i = 0; i < users.size(); i++)
 			{
 				if ((users[i].client.sin_addr.s_addr == client.sin_addr.s_addr) && (users[i].client.sin_port == client.sin_port))
@@ -356,6 +390,7 @@ void main()
 					strcpy_s(users[i].alias, msgRcd.data);
 					cout << endl;
 					found = true;
+					index = i;
 					i = users.size();
 				}
 			}
@@ -369,6 +404,8 @@ void main()
 			{
 				msg = *((message*)"1Alias creado con exito, para entrar a la sala de espera y jugar escriba 3.");
 				sendto(listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&client, sizeof(client));
+
+				cout << ip << ":" << port << " ha cambiado su alias a " << users[index].alias << "." << endl;
 			}
 		}
 		break;
@@ -449,6 +486,8 @@ void main()
 								}
 							}
 						}
+
+						cout << "Una partida ha finalizado. ID : " << matchID << endl;
 
 						matches[matchID].isInUse = false;
 
@@ -548,6 +587,20 @@ void main()
 					if (TryStartGame(matches, ttt, users))
 					{
 						int matchID = users[index].matchID;
+						User* users2 = new User[PLAYER_SIZE];
+
+						users2 = GetPlayerData(users, matches, ttt, matchID);
+
+						char ip01[1024];
+						unsigned short port01 = users2[0].client.sin_port;
+						inet_ntop(AF_INET, &users2[0].client.sin_addr, ip01, sizeof(ip01));
+						char ip02[1024];
+						unsigned short port02 = users2[1].client.sin_port;
+						inet_ntop(AF_INET, &users2[1].client.sin_addr, ip02, sizeof(ip02));
+
+						cout << "Partida creada. ID : " << matchID << ", Jugadores : " << users2[0].alias << "(" << ip01 << ":" << port01 << ")" << " y " << users2[1].alias << "(" << ip02 << ":" << port02 << ")" << endl;
+						delete[] users2;
+
 						int randomValue = irand(0,1);
 						ttt.SetNextPlayer(matches[matchID], (bool)randomValue);
 						ShowBoard(users, matches, ttt, matchID, msg);
@@ -557,12 +610,16 @@ void main()
 					{
 						msg = *((message*)"0No hay suficientes jugadores para empezar la partida,por favor espere...");
 						sendto(listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&client, sizeof(client));
+
+						cout << users[index].alias << "(" << ip << ":" << port << ") ha entrado a la sala de espera." << endl;
 					}
 				}
 				else
 				{
 					msg = *((message*)"0No hay suficientes jugadores para empezar la partida,por favor espere...");
 					sendto(listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&client, sizeof(client));
+
+					cout << users[index].alias << "(" << ip << ":" << port << ") ha entrado a la sala de espera." << endl;
 				}
 			}
 		}
@@ -588,6 +645,8 @@ void main()
 				msg = *((message*)"4");
 				sendto(listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&client, sizeof(client));
 				int matchID = users[index].matchID;
+
+				cout << users[index].alias << "(" << ip << ":" << port << ") ha salido del server." << endl;
 
 				//CANCEL CURRENT MATCH IF HE WAS IN ONE
 				//--------------------------------------

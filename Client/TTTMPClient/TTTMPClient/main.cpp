@@ -6,12 +6,6 @@
 
 using namespace std;
 
-/*typedef struct
-{
-	byte cmd;
-	char data[255];
-} message_t;*/
-
 struct message
 {
 	byte cmd;
@@ -83,8 +77,7 @@ void main()
 			{
 			case '0':
 			{
-				/*cout << "Esperando respuesta del servidor... ";
-				cout << endl;*/
+
 			}
 				// No input.
 				break;
@@ -93,7 +86,6 @@ void main()
 				cout << "Escribe el mensaje a mandar: ";
 				getline(cin, msgToSend);
 				cout << endl;
-				//msgToSend = msgToSend + '\n';
 				msg = *((message*)msgToSend.c_str());
 				sendto(out, (char*)&msg, sizeof(msg), 0, (sockaddr*)&server, sizeof(server));
 			}
