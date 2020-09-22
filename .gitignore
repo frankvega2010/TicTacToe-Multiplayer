@@ -1,0 +1,11 @@
+#bin folder
+**/bin
+
+#obj folder
+**/obj
+
+#vs folder
+**/.vs
+
+**.db
+**.opendb
