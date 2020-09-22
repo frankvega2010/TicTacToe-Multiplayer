@@ -132,7 +132,7 @@ void ShowBoard(vector<User>& users, vector<Match>& matches, TaTeTi& ttt, int mat
 	{
 		if (playersFound < 2)
 		{
-			if (users[i2].matchID == matchID && users[i2].isPlaying && (users[i2].isPlayer1 || users[i2].isPlayer2))
+			if (users[i2].matchID == matchID && !users[i2].connectionLost && users[i2].isPlaying && (users[i2].isPlayer1 || users[i2].isPlayer2))
 			{
 				//SEND BOARD
 				string command = "0" + ttt.GetCurrentGameBoard(matches[matchID]);
@@ -163,7 +163,7 @@ void NextTurn(vector<User>& users, vector<Match>& matches, TaTeTi& ttt, int matc
 
 		for (int i2 = 0; i2 < users.size(); i2++)
 		{
-			if (users[i2].matchID == matchID && users[i2].isPlaying && users[i2].isPlayer1)
+			if (users[i2].matchID == matchID && !users[i2].connectionLost && users[i2].isPlaying && users[i2].isPlayer1)
 			{
 				//IT IS YOUR TURN (CMD 1)
 				// SAVE PLAYER DATA.
@@ -180,7 +180,7 @@ void NextTurn(vector<User>& users, vector<Match>& matches, TaTeTi& ttt, int matc
 
 		for (int i2 = 0; i2 < users.size(); i2++)
 		{
-			if (users[i2].matchID == matchID && users[i2].isPlaying && users[i2].isPlayer2)
+			if (users[i2].matchID == matchID && !users[i2].connectionLost && users[i2].isPlaying && users[i2].isPlayer2)
 			{
 				//IT IS NOT YOUR TURN (CMD 0)
 				// DISPLAY PLAYER 1 DATA
@@ -201,7 +201,7 @@ void NextTurn(vector<User>& users, vector<Match>& matches, TaTeTi& ttt, int matc
 
 		for (int i2 = 0; i2 < users.size(); i2++)
 		{
-			if (users[i2].matchID == matchID && users[i2].isPlaying && users[i2].isPlayer2)
+			if (users[i2].matchID == matchID && !users[i2].connectionLost && users[i2].isPlaying && users[i2].isPlayer2)
 			{
 				//IT IS YOUR TURN (CMD 1)
 				// SAVE PLAYER 2 DATA.
@@ -218,7 +218,7 @@ void NextTurn(vector<User>& users, vector<Match>& matches, TaTeTi& ttt, int matc
 
 		for (int i2 = 0; i2 < users.size(); i2++)
 		{
-			if (users[i2].matchID == matchID && users[i2].isPlaying && users[i2].isPlayer1)
+			if (users[i2].matchID == matchID && !users[i2].connectionLost && users[i2].isPlaying && users[i2].isPlayer1)
 			{
 				//IT IS NOT YOUR TURN (CMD 0)
 				// DISPLAY PLAYER 2 DATA
@@ -239,12 +239,6 @@ void main()
 	TaTeTi ttt;
 	vector<Match> matches;
 	vector<User> users;
-	/*int currentID = -1;
-	ttt.matches.push_back(Match());
-	ttt.matches[ttt.matches.size() - 1].ID = matchesId;
-	currentID = ttt.matches[ttt.matches.size() - 1].ID;
-	matchesId++;
-	ttt.RestartCells(0);*/
 
 	// iniciar winsock
 	WORD version = MAKEWORD(2, 2);
@@ -321,7 +315,6 @@ void main()
 			cerr << "Error al recibir data" << endl;
 		}
 
-
 		switch (msgRcd.cmd)
 		{
 		case '0':
@@ -348,7 +341,7 @@ void main()
 				u.listening = listening;
 				users.push_back(u);
 				cout << "Se conecto alguien" << endl;
-				msg = *((message*)"1Ha entrado a la sala de espera, escriba 1NombreDeJugador para elegir un alias.");
+				msg = *((message*)"1Registro exitoso, escriba 1NombreDeJugador para elegir un alias.");
 				sendto(listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&client, sizeof(client));
 			}
 		}
@@ -374,7 +367,7 @@ void main()
 			}
 			else
 			{
-				msg = *((message*)"1Alias creado con exito, para jugar escriba 3.");
+				msg = *((message*)"1Alias creado con exito, para entrar a la sala de espera y jugar escriba 3.");
 				sendto(listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&client, sizeof(client));
 			}
 		}
@@ -424,7 +417,7 @@ void main()
 						{
 							for (int i2 = 0; i2 < users.size(); i2++)
 							{
-								if (users[i2].matchID == matchID && users[i2].isPlayer2)
+								if (users[i2].matchID == matchID && !users[i2].connectionLost && users[i2].isPlayer2)
 								{
 									string command = "1Jugador " + winnerCellType + " Gano! Si queres jugar de nuevo escribe 3, si no escribe 4";
 
@@ -442,7 +435,7 @@ void main()
 						{
 							for (int i2 = 0; i2 < users.size(); i2++)
 							{
-								if (users[i2].matchID == matchID && users[i2].isPlayer1)
+								if (users[i2].matchID == matchID && !users[i2].connectionLost && users[i2].isPlayer1)
 								{
 									string command = "1Jugador " + winnerCellType + " Gano! Si queres jugar de nuevo escribe 3, si no escribe 4";
 
@@ -471,7 +464,7 @@ void main()
 						{
 							if (playersFound < 2)
 							{
-								if (users[i2].matchID == matchID && (users[i2].isPlayer1 || users[i2].isPlayer2))
+								if (users[i2].matchID == matchID && !users[i2].connectionLost && (users[i2].isPlayer1 || users[i2].isPlayer2))
 								{
 									//SEND TIE MESSAGE
 									string command = "1Empate! Si queres jugar de nuevo escribe 3, si no escribe 4";
@@ -577,6 +570,7 @@ void main()
 		case '4':
 		{
 			bool found = false;
+			int index = -1;
 			for (int i = 0; i < users.size(); i++)
 			{
 				if ((users[i].client.sin_addr.s_addr == client.sin_addr.s_addr) && (users[i].client.sin_port == client.sin_port))
@@ -584,6 +578,7 @@ void main()
 					users[i].connectionLost = true;
 					users[i].wantsToPlayAgain = false;
 					found = true;
+					index = i;
 					i = users.size();
 				}
 			}
@@ -592,6 +587,41 @@ void main()
 			{
 				msg = *((message*)"4");
 				sendto(listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&client, sizeof(client));
+				int matchID = users[index].matchID;
+
+				//CANCEL CURRENT MATCH IF HE WAS IN ONE
+				//--------------------------------------
+
+				if (users[index].isPlaying)
+				{
+					int playersFound = 0;
+
+					for (int i2 = 0; i2 < users.size(); i2++)
+					{
+						if (playersFound < 1)
+						{
+							if (users[i2].matchID == matchID && !users[i2].connectionLost && (users[i2].isPlayer1 || users[i2].isPlayer2))
+							{
+								//SEND TIE MESSAGE
+								string command = "1Tu oponente ha salido de la partida, si queres volver a jugar escribi 3, si queres salir escribi 4.";
+
+								msg = *((message*)command.c_str());
+								sendto(users[i2].listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&users[i2].client, sizeof(users[i2].client));
+
+								users[i2].isPlaying = false;
+								users[i2].wantsToPlayAgain = false;
+
+								playersFound++;
+							}
+						}
+						else
+						{
+							i2 = users.size();
+						}
+					}
+
+					matches[matchID].isInUse = false;
+				}
 			}
 		}
 		break;

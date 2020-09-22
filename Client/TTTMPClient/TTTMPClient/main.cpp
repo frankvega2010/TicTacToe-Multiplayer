@@ -54,6 +54,10 @@ void main()
 
 			return;
 		}
+		else
+		{
+			cout << "Bienvenido al server! Escriba 0 para intentar registrarse." << endl;
+		}
 
 		message msgRcd;
 		message msg;
