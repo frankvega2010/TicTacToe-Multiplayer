@@ -182,7 +182,7 @@ void NextTurn(vector<User>& users, vector<Match>& matches, TaTeTi& ttt, int matc
 	{
 		//SAVE PLAYER1 ALIAS AND CELLTYPE.
 		string player1CellType = "";
-
+		string name;
 
 		for (int i2 = 0; i2 < users.size(); i2++)
 		{
@@ -192,6 +192,7 @@ void NextTurn(vector<User>& users, vector<Match>& matches, TaTeTi& ttt, int matc
 				// SAVE PLAYER DATA.
 				string cellType(1, ttt.CellToChar(users[i2].cellType));
 				player1CellType = cellType;
+				name = users[i2].alias;
 
 				string command = "1Es su turno.Usted es " + player1CellType + ". Para elegir un espacio escriba '2NumeroDeEspacio', ej: 21,22,23,etc.";
 				msg = *((message*)command.c_str());
@@ -207,7 +208,7 @@ void NextTurn(vector<User>& users, vector<Match>& matches, TaTeTi& ttt, int matc
 			{
 				//IT IS NOT YOUR TURN (CMD 0)
 				// DISPLAY PLAYER 1 DATA
-				string command = "0Es turno de " + player1CellType;
+				string command = "0Es turno de " + name + "(" + player1CellType + ")";
 
 				msg = *((message*)command.c_str());
 				sendto(users[i2].listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&users[i2].client, sizeof(users[i2].client));
@@ -220,6 +221,7 @@ void NextTurn(vector<User>& users, vector<Match>& matches, TaTeTi& ttt, int matc
 	{
 		//SAVE PLAYER2 ALIAS AND CELLTYPE.
 		string player2CellType = "";
+		string name;
 
 
 		for (int i2 = 0; i2 < users.size(); i2++)
@@ -230,6 +232,7 @@ void NextTurn(vector<User>& users, vector<Match>& matches, TaTeTi& ttt, int matc
 				// SAVE PLAYER 2 DATA.
 				string cellType(1, ttt.CellToChar(users[i2].cellType));
 				player2CellType = cellType;
+				name = users[i2].alias;
 
 				string command = "1Es su turno.Usted es " + player2CellType + ". Para elegir un espacio escriba '2NumeroDeEspacio', ej: 21,22,23,etc.";
 				msg = *((message*)command.c_str());
@@ -245,7 +248,7 @@ void NextTurn(vector<User>& users, vector<Match>& matches, TaTeTi& ttt, int matc
 			{
 				//IT IS NOT YOUR TURN (CMD 0)
 				// DISPLAY PLAYER 2 DATA
-				string command = "0Es turno de " + player2CellType;
+				string command = "0Es turno de " + name + "(" + player2CellType + ")";
 
 				msg = *((message*)command.c_str());
 				sendto(users[i2].listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&users[i2].client, sizeof(users[i2].client));
@@ -441,6 +444,7 @@ void main()
 						// A player wins
 						//-----------------
 						string winnerCellType(1, ttt.CellToChar(users[index].cellType));
+						string winnerName = users[index].alias;
 
 
 						string command = "1Ganaste! Si queres jugar de nuevo escribe 3, si no escribe 4";
@@ -456,7 +460,7 @@ void main()
 							{
 								if (users[i2].matchID == matchID && !users[i2].connectionLost && users[i2].isPlayer2)
 								{
-									string command = "1Jugador " + winnerCellType + " Gano! Si queres jugar de nuevo escribe 3, si no escribe 4";
+									string command = "1" + winnerName + "(" + winnerCellType + ")" + " Gano! Si queres jugar de nuevo escribe 3, si no escribe 4";
 
 									msg = *((message*)command.c_str());
 									sendto(users[i2].listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&users[i2].client, sizeof(users[i2].client));
@@ -474,7 +478,7 @@ void main()
 							{
 								if (users[i2].matchID == matchID && !users[i2].connectionLost && users[i2].isPlayer1)
 								{
-									string command = "1Jugador " + winnerCellType + " Gano! Si queres jugar de nuevo escribe 3, si no escribe 4";
+									string command = "1" + winnerName + "(" + winnerCellType + ")" + " Gano! Si queres jugar de nuevo escribe 3, si no escribe 4";
 
 									msg = *((message*)command.c_str());
 									sendto(users[i2].listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&users[i2].client, sizeof(users[i2].client));
@@ -597,6 +601,19 @@ void main()
 						char ip02[1024];
 						unsigned short port02 = users2[1].client.sin_port;
 						inet_ntop(AF_INET, &users2[1].client.sin_addr, ip02, sizeof(ip02));
+
+						string name = users2[1].alias;
+						string text = "0Comenzando partida, usted se enfrentara a " + name;
+
+						msg = *((message*)text.c_str());
+						sendto(users2[0].listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&users2[0].client, sizeof(users2[0].client));
+
+						name = users2[0].alias;
+						text = "0Comenzando partida, usted se enfrentara a " + name;
+
+						msg = *((message*)text.c_str());
+						sendto(users2[1].listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&users2[1].client, sizeof(users2[1].client));
+
 
 						cout << "Partida creada. ID : " << matchID << ", Jugadores : " << users2[0].alias << "(" << ip01 << ":" << port01 << ")" << " y " << users2[1].alias << "(" << ip02 << ":" << port02 << ")" << endl;
 						delete[] users2;
