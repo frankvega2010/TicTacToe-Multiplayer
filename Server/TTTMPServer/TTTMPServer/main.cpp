@@ -12,7 +12,7 @@ int sockInit(void)
 {
 #ifdef _WIN32
 	WSADATA wsa_data;
-	return WSAStartup(MAKEWORD(1, 1), &wsa_data);
+	return WSAStartup(MAKEWORD(2, 2), &wsa_data);
 #else
 	return 0;
 #endif
@@ -298,31 +298,8 @@ void main()
 	vector<User> users;
 
 	// iniciar winsock
-	WSADATA data;
-	int wsOk = sockInit();
-#ifdef _WIN32
-	if (wsOk != 0)
-	{
-		cerr << " No pudo iniciar winsock" << endl;
-	}
-#else
-	return 0;
-#endif
-	
-
-#ifdef WIN32
-	SOCKET listening = socket(AF_INET, SOCK_DGRAM, 0);
-#else
-	int listening = socket(AF_INET, SOCK_DGRAM, 0);
-#endif
-
-	// crear un listen socket 
-	//SOCKET listening = socket(AF_INET, SOCK_DGRAM, 0);
-	if (listening == INVALID_SOCKET)
-	{
-		cerr << "invalid socket " << endl;
-
-	}
+	fd_set master;    // master file descriptor list
+	SOCKET listening;     // listening socket descriptor
 
 	string ipToUse = "";
 	int portToUse = 0;
@@ -335,22 +312,43 @@ void main()
 	cout << endl;
 
 	// bind el socket ( seleccionar/pegar el socket a una dupla ip:puerto / direccion de socket)
-	sockaddr_in hint;
+	struct sockaddr_in hint;
 	hint.sin_family = AF_INET;
 	hint.sin_port = htons(portToUse);
-	//hint.sin_addr.S_un.S_addr = ADDR_ANY; // es lo mismo que abajo
+	//hint.sin_addr.s_addr = INADDR_ANY;
+	//hint.sin_addr.S_un.S_addr = ADDR_ANY; // es lo mismo que poner "127.0.0.1"
 	inet_pton(AF_INET, ipToUse.c_str(), &hint.sin_addr); // direccion ip destino	
 
-	int bindResult = bind(listening, (sockaddr*)&hint, sizeof(hint));
+	sockInit(); //Inicializas el socket (SOLO WINDOWS)
 
-	if (bindResult == SOCKET_ERROR)
+	// crear un listen socket 
+	listening = socket(AF_INET, SOCK_DGRAM, 0);
+	if (listening == INVALID_SOCKET || listening < 0)
 	{
-		cerr << "no se pudo hacer el bind " << endl;
-		// error
+		exit(1);
 	}
 
-	// recibir data del socket, y procesarla (proceso bloqueante) 
+	//fixme: check error values for unix
+	if (bind(listening, (struct sockaddr*)&hint, sizeof(hint)) == SOCKET_ERROR)
+	{
+		sockClose(listening);
+		exit(2);
+	}
 
+	// listen
+	/*if (listen(listening, 10) == -1) 
+	{
+		perror("listen");
+		exit(3);
+	}*/
+
+	struct timeval tv; //Intervalo del chequeo en el While.
+	tv.tv_sec = 0;
+	tv.tv_usec = 10000; // 10ms
+	int n; // Para verificar si hay algun socket que esta listo para mandar informacion.
+	int nbytes; // Para verificar que el socket realmente exista, antes era un proceso bloqueante pero ya no.
+
+	// recibir data del socket, y procesarla
 	char buf[1024];
 	message msgRcd;
 	int clientIndex = 0;
@@ -371,381 +369,401 @@ void main()
 		memset(&msgRcd, 0, sizeof(msgRcd));
 		memset(&msg, 0, sizeof(msg));
 
-		// funcion bloqueante
-		//int bytesIn = recvfrom(listening, buf, sizeof(buf), 0, (sockaddr*)&client, &clientSize);
-		int bytesIn = recvfrom(listening, (char*)&msgRcd, sizeof(msgRcd), 0, (sockaddr*)&client, &clientSize);
+		FD_ZERO(&master);    // clear the master and temp sets
+		FD_SET(listening, &master); // add the listener to the master set
 
-		char ip[1024];
-		unsigned short port = client.sin_port;
+		n = select(listening, &master, NULL, NULL, &tv);
 
-		inet_ntop(AF_INET, &client.sin_addr, ip, sizeof(ip));
-
-		if (bytesIn == SOCKET_ERROR)
+		if (n > 0) 
 		{
-			cerr << "Error al recibir data" << endl;
-		}
-
-		switch (msgRcd.cmd)
-		{
-		case '0':
-		{
-			bool found = false;
-			for (int i = 0; i < users.size(); i++)
+			// funcion bloqueante , leer el socket. La funcion deja de ser bloqueante gracias al n = select();
+			nbytes = recvfrom(listening, (char*)&msgRcd, sizeof(msgRcd), 0, (sockaddr*)&client, &clientSize);
+			if (nbytes > 0) 
 			{
-				if ((users[i].client.sin_addr.s_addr == client.sin_addr.s_addr) && (users[i].client.sin_port == client.sin_port))
+
+				char ip[1024];
+				unsigned short port = client.sin_port;
+
+				inet_ntop(AF_INET, &client.sin_addr, ip, sizeof(ip));
+
+				if (nbytes == SOCKET_ERROR)
 				{
-					found = true;
-					i = users.size();
+					cerr << "Error al recibir data" << endl;
 				}
-			}
 
-			if (found)
-			{
-				msg = *((message*)"1Usuario ya registrado, eliga otro comando del 0 al 4!.");
-				sendto(listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&client, sizeof(client));
-			}
-			else
-			{
-				User u;
-				u.client = client;
-				u.listening = listening;
-				u.connectionLost = false;
-				users.push_back(u);
-				cout << ip << ":" << port << " se ha conectado al servidor" << endl;
-				msg = *((message*)"1Registro exitoso, escriba 1NombreDeJugador para elegir un alias.");
-				sendto(listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&client, sizeof(client));
-			}
-		}
-		break;
-		case '1':
-		{
-			bool found = false;
-			int index = -1;
-			for (int i = 0; i < users.size(); i++)
-			{
-				if ((users[i].client.sin_addr.s_addr == client.sin_addr.s_addr) && (users[i].client.sin_port == client.sin_port))
+				switch (msgRcd.cmd)
 				{
-					strcpy_s(users[i].alias, msgRcd.data);
-					cout << endl;
-					found = true;
-					index = i;
-					i = users.size();
-				}
-			}
-
-			if (!found)
-			{
-				msg = *((message*)"1Para poner un alias usted debera unirse a la sala de espera escribiendo '0'.");
-				sendto(listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&client, sizeof(client));
-			}
-			else
-			{
-				msg = *((message*)"1Alias creado con exito, para entrar a la sala de espera y jugar escriba 3.");
-				sendto(listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&client, sizeof(client));
-
-				cout << ip << ":" << port << " ha cambiado su alias a " << users[index].alias << "." << endl;
-			}
-		}
-		break;
-		case '2':
-		{
-			// Hacer jugada
-			bool found = false;
-			int index = 0;
-			for (int i = 0; i < users.size(); i++)
-			{
-				if ((users[i].client.sin_addr.s_addr == client.sin_addr.s_addr) && (users[i].client.sin_port == client.sin_port))
+				case '0':
 				{
-					if (users[i].isPlaying && !users[i].wantsToPlayAgain)
+					bool found = false;
+					for (int i = 0; i < users.size(); i++)
 					{
-						found = true;
-						index = i;
-						i = users.size();
+						if ((users[i].client.sin_addr.s_addr == client.sin_addr.s_addr) && (users[i].client.sin_port == client.sin_port))
+						{
+							found = true;
+							i = users.size();
+						}
+					}
+
+					if (found)
+					{
+						msg = *((message*)"1Usuario ya registrado, eliga otro comando del 0 al 4!.");
+						sendto(listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&client, sizeof(client));
+					}
+					else
+					{
+						User u;
+						u.client = client;
+						u.listening = listening;
+						u.connectionLost = false;
+						users.push_back(u);
+						cout << ip << ":" << port << " se ha conectado al servidor" << endl;
+						msg = *((message*)"1Registro exitoso, escriba 1NombreDeJugador para elegir un alias.");
+						sendto(listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&client, sizeof(client));
 					}
 				}
-			}
-
-			if (found)
-			{
-				int playerInput = (int)msgRcd.data[0] - '0';
-				int matchID = users[index].matchID;
-
-				if (ttt.MakeMove(matches[matchID], users[index], playerInput))
+				break;
+				case '1':
 				{
-					ShowBoard(users, matches,ttt,matchID, msg);
-
-					if (ttt.CheckAll(matches[matchID]))
+					bool found = false;
+					int index = -1;
+					for (int i = 0; i < users.size(); i++)
 					{
-						// A player wins
-						//-----------------
-						string winnerCellType(1, ttt.CellToChar(users[index].cellType));
-						string winnerName = users[index].alias;
+						if ((users[i].client.sin_addr.s_addr == client.sin_addr.s_addr) && (users[i].client.sin_port == client.sin_port))
+						{
+							strcpy_s(users[i].alias, msgRcd.data);
+							cout << endl;
+							found = true;
+							index = i;
+							i = users.size();
+						}
+					}
 
-
-						string command = "1Ganaste! Si queres jugar de nuevo escribe 3, si no escribe 4";
-						msg = *((message*)command.c_str());
+					if (!found)
+					{
+						msg = *((message*)"1Para poner un alias usted debera unirse a la sala de espera escribiendo '0'.");
+						sendto(listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&client, sizeof(client));
+					}
+					else
+					{
+						msg = *((message*)"1Alias creado con exito, para entrar a la sala de espera y jugar escriba 3.");
 						sendto(listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&client, sizeof(client));
 
-						users[index].isPlaying = false;
-						users[index].wantsToPlayAgain = false;
-
-						if (users[index].isPlayer1) // if player1 Won
-						{
-							for (int i2 = 0; i2 < users.size(); i2++)
-							{
-								if (users[i2].matchID == matchID && !users[i2].connectionLost && users[i2].isPlayer2)
-								{
-									string command = "1" + winnerName + "(" + winnerCellType + ")" + " Gano! Si queres jugar de nuevo escribe 3, si no escribe 4";
-
-									msg = *((message*)command.c_str());
-									sendto(users[i2].listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&users[i2].client, sizeof(users[i2].client));
-
-									users[i2].isPlaying = false;
-									users[i2].wantsToPlayAgain = false;
-
-									i2 = users.size();
-								}
-							}
-						}
-						else if (users[index].isPlayer2) // if player2 Won
-						{
-							for (int i2 = 0; i2 < users.size(); i2++)
-							{
-								if (users[i2].matchID == matchID && !users[i2].connectionLost && users[i2].isPlayer1)
-								{
-									string command = "1" + winnerName + "(" + winnerCellType + ")" + " Gano! Si queres jugar de nuevo escribe 3, si no escribe 4";
-
-									msg = *((message*)command.c_str());
-									sendto(users[i2].listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&users[i2].client, sizeof(users[i2].client));
-
-									users[i2].isPlaying = false;
-									users[i2].wantsToPlayAgain = false;
-
-									i2 = users.size();
-								}
-							}
-						}
-
-						cout << "Una partida ha finalizado. ID : " << matchID << endl;
-
-						matches[matchID].isInUse = false;
-
+						cout << ip << ":" << port << " ha cambiado su alias a " << users[index].alias << "." << endl;
 					}
-					else if (matches[matchID].turnsLeft == 0)
+				}
+				break;
+				case '2':
+				{
+					// Hacer jugada
+					bool found = false;
+					int index = 0;
+					for (int i = 0; i < users.size(); i++)
 					{
-						// Tie
-						//-----------------
-
-						int playersFound = 0;
-
-						for (int i2 = 0; i2 < users.size(); i2++)
+						if ((users[i].client.sin_addr.s_addr == client.sin_addr.s_addr) && (users[i].client.sin_port == client.sin_port))
 						{
-							if (playersFound < 2)
+							if (users[i].isPlaying && !users[i].wantsToPlayAgain)
 							{
-								if (users[i2].matchID == matchID && !users[i2].connectionLost && (users[i2].isPlayer1 || users[i2].isPlayer2))
+								found = true;
+								index = i;
+								i = users.size();
+							}
+						}
+					}
+
+					if (found)
+					{
+						int playerInput = (int)msgRcd.data[0] - '0';
+						int matchID = users[index].matchID;
+
+						if (ttt.MakeMove(matches[matchID], users[index], playerInput))
+						{
+							ShowBoard(users, matches, ttt, matchID, msg);
+
+							if (ttt.CheckAll(matches[matchID]))
+							{
+								// A player wins
+								//-----------------
+								string winnerCellType(1, ttt.CellToChar(users[index].cellType));
+								string winnerName = users[index].alias;
+
+
+								string command = "1Ganaste! Si queres jugar de nuevo escribe 3, si no escribe 4";
+								msg = *((message*)command.c_str());
+								sendto(listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&client, sizeof(client));
+
+								users[index].isPlaying = false;
+								users[index].wantsToPlayAgain = false;
+
+								if (users[index].isPlayer1) // if player1 Won
 								{
-									//SEND TIE MESSAGE
-									string command = "1Empate! Si queres jugar de nuevo escribe 3, si no escribe 4";
+									for (int i2 = 0; i2 < users.size(); i2++)
+									{
+										if (users[i2].matchID == matchID && !users[i2].connectionLost && users[i2].isPlayer2)
+										{
+											string command = "1" + winnerName + "(" + winnerCellType + ")" + " Gano! Si queres jugar de nuevo escribe 3, si no escribe 4";
 
-									msg = *((message*)command.c_str());
-									sendto(users[i2].listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&users[i2].client, sizeof(users[i2].client));
+											msg = *((message*)command.c_str());
+											sendto(users[i2].listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&users[i2].client, sizeof(users[i2].client));
 
-									users[i2].isPlaying = false;
-									users[i2].wantsToPlayAgain = false;
+											users[i2].isPlaying = false;
+											users[i2].wantsToPlayAgain = false;
 
-									playersFound++;
+											i2 = users.size();
+										}
+									}
 								}
+								else if (users[index].isPlayer2) // if player2 Won
+								{
+									for (int i2 = 0; i2 < users.size(); i2++)
+									{
+										if (users[i2].matchID == matchID && !users[i2].connectionLost && users[i2].isPlayer1)
+										{
+											string command = "1" + winnerName + "(" + winnerCellType + ")" + " Gano! Si queres jugar de nuevo escribe 3, si no escribe 4";
+
+											msg = *((message*)command.c_str());
+											sendto(users[i2].listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&users[i2].client, sizeof(users[i2].client));
+
+											users[i2].isPlaying = false;
+											users[i2].wantsToPlayAgain = false;
+
+											i2 = users.size();
+										}
+									}
+								}
+
+								cout << "Una partida ha finalizado. ID : " << matchID << endl;
+
+								matches[matchID].isInUse = false;
+
+							}
+							else if (matches[matchID].turnsLeft == 0)
+							{
+								// Tie
+								//-----------------
+
+								int playersFound = 0;
+
+								for (int i2 = 0; i2 < users.size(); i2++)
+								{
+									if (playersFound < 2)
+									{
+										if (users[i2].matchID == matchID && !users[i2].connectionLost && (users[i2].isPlayer1 || users[i2].isPlayer2))
+										{
+											//SEND TIE MESSAGE
+											string command = "1Empate! Si queres jugar de nuevo escribe 3, si no escribe 4";
+
+											msg = *((message*)command.c_str());
+											sendto(users[i2].listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&users[i2].client, sizeof(users[i2].client));
+
+											users[i2].isPlaying = false;
+											users[i2].wantsToPlayAgain = false;
+
+											playersFound++;
+										}
+									}
+									else
+									{
+										i2 = users.size();
+									}
+								}
+
+								matches[matchID].isInUse = false;
 							}
 							else
 							{
-								i2 = users.size();
-							}
-						}
-
-						matches[matchID].isInUse = false;
-					}
-					else
-					{
-						// Next Turn
-						NextTurn(users, matches, ttt, matchID, msg);
-					}
-				}
-				else
-				{
-					msg = *((message*)"1Espacio invalido o ya elegido, seleccione otro: ");
-					sendto(listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&client, sizeof(client));
-				}
-
-			}
-			else
-			{
-				msg = *((message*)"1Usuario no encontrado, revise si se ha conectado escribiendo '0'.");
-				sendto(listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&client, sizeof(client));
-			}
-		}
-			break;
-		case '3':
-		{
-			bool found = false;
-			int index = 0;
-			int usersNotPlaying = 0;
-			for (int i = 0; i < users.size(); i++)
-			{
-				if ((users[i].client.sin_addr.s_addr == client.sin_addr.s_addr) && (users[i].client.sin_port == client.sin_port))
-				{
-					users[i].wantsToPlayAgain = true;
-
-					if (!users[i].isPlaying)
-					{
-						users[i].isPlaying = false;
-						found = true;
-						index = i;
-						i = users.size();
-					}
-
-				}
-			}
-
-			for (int i = 0; i < users.size(); i++)
-			{
-				if (users[i].wantsToPlayAgain)
-				{
-					usersNotPlaying++;
-				}
-			}
-
-			if (!found)
-			{
-				msg = *((message*)"1Para poder jugar usted debera elegir un alias escribiendo 1NombreDeJugador o terminar la partida actual.");
-				sendto(listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&client, sizeof(client));
-			}
-			else
-			{
-				if (usersNotPlaying % 2 == 0 && usersNotPlaying != 0)
-				{
-					if (TryStartGame(matches, ttt, users))
-					{
-						int matchID = users[index].matchID;
-						User* users2 = new User[PLAYER_SIZE];
-
-						users2 = GetPlayerData(users, matches, ttt, matchID);
-
-						char ip01[1024];
-						unsigned short port01 = users2[0].client.sin_port;
-						inet_ntop(AF_INET, &users2[0].client.sin_addr, ip01, sizeof(ip01));
-						char ip02[1024];
-						unsigned short port02 = users2[1].client.sin_port;
-						inet_ntop(AF_INET, &users2[1].client.sin_addr, ip02, sizeof(ip02));
-
-						string name = users2[1].alias;
-						string text = "0Comenzando partida, usted se enfrentara a " + name;
-
-						msg = *((message*)text.c_str());
-						sendto(users2[0].listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&users2[0].client, sizeof(users2[0].client));
-
-						name = users2[0].alias;
-						text = "0Comenzando partida, usted se enfrentara a " + name;
-
-						msg = *((message*)text.c_str());
-						sendto(users2[1].listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&users2[1].client, sizeof(users2[1].client));
-
-
-						cout << "Partida creada. ID : " << matchID << ", Jugadores : " << users2[0].alias << "(" << ip01 << ":" << port01 << ")" << " y " << users2[1].alias << "(" << ip02 << ":" << port02 << ")" << endl;
-						delete[] users2;
-
-						int randomValue = irand(0,1);
-						ttt.SetNextPlayer(matches[matchID], (bool)randomValue);
-						ShowBoard(users, matches, ttt, matchID, msg);
-						NextTurn(users, matches, ttt, matchID, msg);
-					}
-					else
-					{
-						msg = *((message*)"0No hay suficientes jugadores para empezar la partida,por favor espere...");
-						sendto(listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&client, sizeof(client));
-
-						cout << users[index].alias << "(" << ip << ":" << port << ") ha entrado a la sala de espera." << endl;
-					}
-				}
-				else
-				{
-					msg = *((message*)"0No hay suficientes jugadores para empezar la partida,por favor espere...");
-					sendto(listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&client, sizeof(client));
-
-					cout << users[index].alias << "(" << ip << ":" << port << ") ha entrado a la sala de espera." << endl;
-				}
-			}
-		}
-		break;
-		case '4':
-		{
-			bool found = false;
-			int index = -1;
-			for (int i = 0; i < users.size(); i++)
-			{
-				if ((users[i].client.sin_addr.s_addr == client.sin_addr.s_addr) && (users[i].client.sin_port == client.sin_port))
-				{
-					users[i].connectionLost = true;
-					users[i].wantsToPlayAgain = false;
-					found = true;
-					index = i;
-					i = users.size();
-				}
-			}
-
-			if (found)
-			{
-				msg = *((message*)"4");
-				sendto(listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&client, sizeof(client));
-				int matchID = users[index].matchID;
-
-				cout << users[index].alias << "(" << ip << ":" << port << ") ha salido del server." << endl;
-
-				//CANCEL CURRENT MATCH IF HE WAS IN ONE
-				//--------------------------------------
-
-				if (users[index].isPlaying)
-				{
-					int playersFound = 0;
-
-					for (int i2 = 0; i2 < users.size(); i2++)
-					{
-						if (playersFound < 1)
-						{
-							if (users[i2].matchID == matchID && !users[i2].connectionLost && (users[i2].isPlayer1 || users[i2].isPlayer2))
-							{
-								//SEND TIE MESSAGE
-								string command = "1Tu oponente ha salido de la partida, si queres volver a jugar escribi 3, si queres salir escribi 4.";
-
-								msg = *((message*)command.c_str());
-								sendto(users[i2].listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&users[i2].client, sizeof(users[i2].client));
-
-								users[i2].isPlaying = false;
-								users[i2].wantsToPlayAgain = false;
-
-								playersFound++;
+								// Next Turn
+								NextTurn(users, matches, ttt, matchID, msg);
 							}
 						}
 						else
 						{
-							i2 = users.size();
+							msg = *((message*)"1Espacio invalido o ya elegido, seleccione otro: ");
+							sendto(listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&client, sizeof(client));
+						}
+
+					}
+					else
+					{
+						msg = *((message*)"1Usuario no encontrado, revise si se ha conectado escribiendo '0'.");
+						sendto(listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&client, sizeof(client));
+					}
+				}
+				break;
+				case '3':
+				{
+					bool found = false;
+					int index = 0;
+					int usersNotPlaying = 0;
+					for (int i = 0; i < users.size(); i++)
+					{
+						if ((users[i].client.sin_addr.s_addr == client.sin_addr.s_addr) && (users[i].client.sin_port == client.sin_port))
+						{
+							users[i].wantsToPlayAgain = true;
+
+							if (!users[i].isPlaying)
+							{
+								users[i].isPlaying = false;
+								found = true;
+								index = i;
+								i = users.size();
+							}
+
 						}
 					}
 
-					matches[matchID].isInUse = false;
+					for (int i = 0; i < users.size(); i++)
+					{
+						if (users[i].wantsToPlayAgain)
+						{
+							usersNotPlaying++;
+						}
+					}
+
+					if (!found)
+					{
+						msg = *((message*)"1Para poder jugar usted debera elegir un alias escribiendo 1NombreDeJugador o terminar la partida actual.");
+						sendto(listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&client, sizeof(client));
+					}
+					else
+					{
+						if (usersNotPlaying % 2 == 0 && usersNotPlaying != 0)
+						{
+							if (TryStartGame(matches, ttt, users))
+							{
+								int matchID = users[index].matchID;
+								User* users2 = new User[PLAYER_SIZE];
+
+								users2 = GetPlayerData(users, matches, ttt, matchID);
+
+								char ip01[1024];
+								unsigned short port01 = users2[0].client.sin_port;
+								inet_ntop(AF_INET, &users2[0].client.sin_addr, ip01, sizeof(ip01));
+								char ip02[1024];
+								unsigned short port02 = users2[1].client.sin_port;
+								inet_ntop(AF_INET, &users2[1].client.sin_addr, ip02, sizeof(ip02));
+
+								string name = users2[1].alias;
+								string text = "0Comenzando partida, usted se enfrentara a " + name;
+
+								msg = *((message*)text.c_str());
+								sendto(users2[0].listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&users2[0].client, sizeof(users2[0].client));
+
+								name = users2[0].alias;
+								text = "0Comenzando partida, usted se enfrentara a " + name;
+
+								msg = *((message*)text.c_str());
+								sendto(users2[1].listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&users2[1].client, sizeof(users2[1].client));
+
+
+								cout << "Partida creada. ID : " << matchID << ", Jugadores : " << users2[0].alias << "(" << ip01 << ":" << port01 << ")" << " y " << users2[1].alias << "(" << ip02 << ":" << port02 << ")" << endl;
+								delete[] users2;
+
+								int randomValue = irand(0, 1);
+								ttt.SetNextPlayer(matches[matchID], (bool)randomValue);
+								ShowBoard(users, matches, ttt, matchID, msg);
+								NextTurn(users, matches, ttt, matchID, msg);
+							}
+							else
+							{
+								msg = *((message*)"0No hay suficientes jugadores para empezar la partida,por favor espere...");
+								sendto(listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&client, sizeof(client));
+
+								cout << users[index].alias << "(" << ip << ":" << port << ") ha entrado a la sala de espera." << endl;
+							}
+						}
+						else
+						{
+							msg = *((message*)"0No hay suficientes jugadores para empezar la partida,por favor espere...");
+							sendto(listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&client, sizeof(client));
+
+							cout << users[index].alias << "(" << ip << ":" << port << ") ha entrado a la sala de espera." << endl;
+						}
+					}
 				}
+				break;
+				case '4':
+				{
+					bool found = false;
+					int index = -1;
+					for (int i = 0; i < users.size(); i++)
+					{
+						if ((users[i].client.sin_addr.s_addr == client.sin_addr.s_addr) && (users[i].client.sin_port == client.sin_port))
+						{
+							users[i].connectionLost = true;
+							users[i].wantsToPlayAgain = false;
+							found = true;
+							index = i;
+							i = users.size();
+						}
+					}
+
+					if (found)
+					{
+						msg = *((message*)"4");
+						sendto(listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&client, sizeof(client));
+						int matchID = users[index].matchID;
+
+						cout << users[index].alias << "(" << ip << ":" << port << ") ha salido del server." << endl;
+
+						//CANCEL CURRENT MATCH IF HE WAS IN ONE
+						//--------------------------------------
+
+						if (users[index].isPlaying)
+						{
+							int playersFound = 0;
+
+							for (int i2 = 0; i2 < users.size(); i2++)
+							{
+								if (playersFound < 1)
+								{
+									if (users[i2].matchID == matchID && !users[i2].connectionLost && (users[i2].isPlayer1 || users[i2].isPlayer2))
+									{
+										//SEND TIE MESSAGE
+										string command = "1Tu oponente ha salido de la partida, si queres volver a jugar escribi 3, si queres salir escribi 4.";
+
+										msg = *((message*)command.c_str());
+										sendto(users[i2].listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&users[i2].client, sizeof(users[i2].client));
+
+										users[i2].isPlaying = false;
+										users[i2].wantsToPlayAgain = false;
+
+										playersFound++;
+									}
+								}
+								else
+								{
+									i2 = users.size();
+								}
+							}
+
+							matches[matchID].isInUse = false;
+						}
+					}
+				}
+				break;
+				default:
+					cout << "byte invalido " << msgRcd.cmd << endl;
+					msg = *((message*)"1Byte invalido, seleccione una opcion del 0 al 4.");
+					sendto(listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&client, sizeof(client));
+					break;
+				}
+
 			}
 		}
-		break;
-		default:
-			cout << "byte invalido " << msgRcd.cmd << endl;
-			msg = *((message*)"1Byte invalido, seleccione una opcion del 0 al 4.");
-			sendto(listening, (char*)&msg, sizeof(msg), 0, (sockaddr*)&client, sizeof(client));
-			break;
+		else if (n < 0) 
+		{
+			perror("select");
+			exit(4);
 		}
+
+		//Hacer otras cosas...
+		//cout << "ping" << endl; //cout test.
+
 	}
 
 	// destruir el socket
-	closesocket(listening);
+	sockClose(listening);
 
 	// cleanup winsock
 	sockQuit();
