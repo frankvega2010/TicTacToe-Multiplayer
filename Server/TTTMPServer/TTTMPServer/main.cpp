@@ -8,7 +8,38 @@ struct message
 	char data[255];
 };
 
+int sockInit(void)
+{
+#ifdef _WIN32
+	WSADATA wsa_data;
+	return WSAStartup(MAKEWORD(1, 1), &wsa_data);
+#else
+	return 0;
+#endif
+}
 
+int sockQuit(void)
+{
+#ifdef _WIN32
+	return WSACleanup();
+#else
+	return 0;
+#endif
+}
+
+/* Note: For POSIX, typedef SOCKET as an int. */
+int sockClose(SOCKET sock)
+{
+	int status = 0;
+#ifdef _WIN32
+	status = shutdown(sock, SD_BOTH);
+	if (status == 0) { status = closesocket(sock); }
+#else
+	status = shutdown(sock, SHUT_RDWR);
+	if (status == 0) { status = close(sock); }
+#endif
+	return status;
+}
 
 int TryToGetEmptyMatch(vector<Match>& matches, TaTeTi& ttt)
 {
@@ -267,13 +298,17 @@ void main()
 	vector<User> users;
 
 	// iniciar winsock
-	WORD version = MAKEWORD(2, 2);
 	WSADATA data;
-	int wsOk = WSAStartup(version, &data);
+	int wsOk = sockInit();
+#ifdef _WIN32
 	if (wsOk != 0)
 	{
 		cerr << " No pudo iniciar winsock" << endl;
 	}
+#else
+	return 0;
+#endif
+	
 
 #ifdef WIN32
 	SOCKET listening = socket(AF_INET, SOCK_DGRAM, 0);
@@ -713,5 +748,5 @@ void main()
 	closesocket(listening);
 
 	// cleanup winsock
-	WSACleanup();
+	sockQuit();
 }
